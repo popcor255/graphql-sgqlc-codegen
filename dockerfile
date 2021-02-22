@@ -1,8 +1,6 @@
-FROM node:15.9.0-buster
-RUN useradd -ms /bin/bash non-root
-USER non-root
-WORKDIR /home/non-root
+FROM nikolaik/python-nodejs:python3.9-nodejs14
+WORKDIR /home/root
 COPY . .
-CMD yarn codegen
+CMD yarn codegen && python -m sgqlc-codegen schema schema.graphql schema.py
 
 
