@@ -1,6 +1,6 @@
 overwrite: true
 schema: "schema.graphql"
 generates:
-  schema.json:
+  ./schema/schema.json:
     plugins:
       - "introspection"

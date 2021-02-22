@@ -3,6 +3,6 @@ RUN useradd -ms /bin/bash non-root
 USER non-root
 WORKDIR /home/non-root
 COPY . .
-CMD yarn graphql-codegen
+CMD yarn codegen
 
 

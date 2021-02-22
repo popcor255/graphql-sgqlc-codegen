@@ -1,0 +1,319 @@
+schema {
+  query: Query
+}
+
+type Query {
+  uniswapFactory: UniswapFactory
+  token: Token
+  pair: Pair
+  user: User
+  liquidityPosition: LiquidityPosition
+  liquidityPositionSnapshot: LiquidityPositionSnapshot
+  transaction: Transaction
+  mint: Mint
+  burn: Burn
+  swap: Swap
+  bundle: Bundle
+  uniswapDayData: UniswapDayData
+  pairHourData: PairHourData
+  pairDayData: PairDayData
+  tokenDayData: TokenDayData
+}
+
+type UniswapFactory @entity {
+  # factory address
+  id: ID!
+
+  # pair info
+  pairCount: Int!
+
+  # total volume
+  totalVolumeUSD: Float!
+  totalVolumeETH: Float!
+
+  # untracked values - less confident USD scores
+  untrackedVolumeUSD: Float!
+
+  # total liquidity
+  totalLiquidityUSD: Float!
+  totalLiquidityETH: Float!
+
+  # transactions
+  txCount: Int!
+}
+
+type Token @entity {
+  # token address
+  id: ID!
+
+  # mirrored from the smart contract
+  symbol: String!
+  name: String!
+  decimals: Int!
+
+  # used for other stats like marketcap
+  totalSupply: Int!
+
+  # token specific volume
+  tradeVolume: Float!
+  tradeVolumeUSD: Float!
+  untrackedVolumeUSD: Float!
+
+  # transactions across all pairs
+  txCount: Int!
+
+  # liquidity across all pairs
+  totalLiquidity: Float!
+
+  # derived prices
+  derivedETH: Float
+
+  # derived fields
+  tokenDayData: [TokenDayData!]! @derivedFrom(field: "token")
+  pairDayDataBase: [PairDayData!]! @derivedFrom(field: "token0")
+  pairDayDataQuote: [PairDayData!]! @derivedFrom(field: "token1")
+  pairBase: [Pair!]! @derivedFrom(field: "token0")
+  pairQuote: [Pair!]! @derivedFrom(field: "token1")
+}
+
+type Pair @entity {
+  # pair address
+  id: ID!
+
+  # mirrored from the smart contract
+  token0: Token!
+  token1: Token!
+  reserve0: Float!
+  reserve1: Float!
+  totalSupply: Float!
+
+  # derived liquidity
+  reserveETH: Float!
+  reserveUSD: Float!
+  trackedReserveETH: Float! # used for separating per pair reserves and global
+  # Price in terms of the asset pair
+  token0Price: Float!
+  token1Price: Float!
+
+  # lifetime volume stats
+  volumeToken0: Float!
+  volumeToken1: Float!
+  volumeUSD: Float!
+  untrackedVolumeUSD: Float!
+  txCount: Int!
+
+  # creation stats
+  createdAtTimestamp: Int!
+  createdAtBlockNumber: Int!
+
+  # Fields used to help derived relationship
+  liquidityProviderCount: Int! # used to detect new exchanges
+  # derived fields
+  pairHourData: [PairHourData!]! @derivedFrom(field: "pair")
+  liquidityPositions: [LiquidityPosition!]! @derivedFrom(field: "pair")
+  liquidityPositionSnapshots: [LiquidityPositionSnapshot!]!
+    @derivedFrom(field: "pair")
+  mints: [Mint!]! @derivedFrom(field: "pair")
+  burns: [Burn!]! @derivedFrom(field: "pair")
+  swaps: [Swap!]! @derivedFrom(field: "pair")
+}
+
+type User @entity {
+  id: ID!
+  liquidityPositions: [LiquidityPosition!] @derivedFrom(field: "user")
+  usdSwapped: Float!
+}
+
+type LiquidityPosition @entity {
+  id: ID!
+  user: User!
+  pair: Pair!
+  liquidityTokenBalance: Float!
+}
+
+# saved over time for return calculations, gets created and never updated
+type LiquidityPositionSnapshot @entity {
+  id: ID!
+  liquidityPosition: LiquidityPosition!
+  timestamp: Int! # saved for fast historical lookups
+  block: Int! # saved for fast historical lookups
+  user: User! # reference to user
+  pair: Pair! # reference to pair
+  token0PriceUSD: Float! # snapshot of token0 price
+  token1PriceUSD: Float! # snapshot of token1 price
+  reserve0: Float! # snapshot of pair token0 reserves
+  reserve1: Float! # snapshot of pair token1 reserves
+  reserveUSD: Float! # snapshot of pair reserves in USD
+  liquidityTokenTotalSupply: Float! # snapshot of pool token supply
+  liquidityTokenBalance: Float! # snapshot of users pool token balance
+}
+
+type Transaction @entity {
+  id: ID! # txn hash
+  blockNumber: Int!
+  timestamp: Int!
+  # This is not the reverse of Mint.transaction; it is only used to
+  # track incomplete mints (similar for burns and swaps)
+  mints: [Mint]!
+  burns: [Burn]!
+  swaps: [Swap]!
+}
+
+type Mint @entity {
+  # transaction hash + "-" + index in mints Transaction array
+  id: ID!
+  transaction: Transaction!
+  timestamp: Int! # need this to pull recent txns for specific token or pair
+  pair: Pair!
+
+  # populated from the primary Transfer event
+  to: Int!
+  liquidity: Float!
+
+  # populated from the Mint event
+  sender: Int
+  amount0: Float
+  amount1: Float
+  logIndex: Int
+  # derived amount based on available prices of tokens
+  amountUSD: Float
+
+  # optional fee fields, if a Transfer event is fired in _mintFee
+  feeTo: Int
+  feeLiquidity: Float
+}
+
+type Burn @entity {
+  # transaction hash + "-" + index in mints Transaction array
+  id: ID!
+  transaction: Transaction!
+  timestamp: Int! # need this to pull recent txns for specific token or pair
+  pair: Pair!
+
+  # populated from the primary Transfer event
+  liquidity: Float!
+
+  # populated from the Burn event
+  sender: Int
+  amount0: Float
+  amount1: Float
+  to: Int
+  logIndex: Int
+  # derived amount based on available prices of tokens
+  amountUSD: Float
+
+  # mark uncomplete in ETH case
+  needsComplete: Boolean!
+
+  # optional fee fields, if a Transfer event is fired in _mintFee
+  feeTo: Int
+  feeLiquidity: Float
+}
+
+type Swap @entity {
+  # transaction hash + "-" + index in swaps Transaction array
+  id: ID!
+  transaction: Transaction!
+  timestamp: Int! # need this to pull recent txns for specific token or pair
+  pair: Pair!
+
+  # populated from the Swap event
+  sender: Int!
+  from: Int! # the EOA that initiated the txn
+  amount0In: Float!
+  amount1In: Float!
+  amount0Out: Float!
+  amount1Out: Float!
+  to: Int!
+  logIndex: Int
+
+  # derived info
+  amountUSD: Float!
+}
+
+# stores for USD calculations
+type Bundle @entity {
+  id: ID!
+  ethPrice: Float! # price of ETH usd
+}
+
+# Data accumulated and condensed into day stats for all of Uniswap
+type UniswapDayData @entity {
+  id: ID! # timestamp rounded to current day by dividing by 86400
+  date: Int!
+
+  dailyVolumeETH: Float!
+  dailyVolumeUSD: Float!
+  dailyVolumeUntracked: Float!
+
+  totalVolumeETH: Float!
+  totalLiquidityETH: Float!
+  totalVolumeUSD: Float! # Accumulate at each trade, not just calculated off whatever totalVolume is. making it more accurate as it is a live conversion
+  totalLiquidityUSD: Float!
+
+  txCount: Int!
+}
+
+type PairHourData @entity {
+  id: ID!
+  hourStartUnix: Int! # unix timestamp for start of hour
+  pair: Pair!
+
+  # reserves
+  reserve0: Float!
+  reserve1: Float!
+
+  # derived liquidity
+  reserveUSD: Float!
+
+  # volume stats
+  hourlyVolumeToken0: Float!
+  hourlyVolumeToken1: Float!
+  hourlyVolumeUSD: Float!
+  hourlyTxns: Int!
+}
+
+# Data accumulated and condensed into day stats for each exchange
+type PairDayData @entity {
+  id: ID!
+  date: Int!
+  pairAddress: Int!
+  token0: Token!
+  token1: Token!
+
+  # reserves
+  reserve0: Float!
+  reserve1: Float!
+
+  # total supply for LP historical returns
+  totalSupply: Float!
+
+  # derived liquidity
+  reserveUSD: Float!
+
+  # volume stats
+  dailyVolumeToken0: Float!
+  dailyVolumeToken1: Float!
+  dailyVolumeUSD: Float!
+  dailyTxns: Int!
+}
+
+type TokenDayData @entity {
+  id: ID!
+  date: Int!
+  token: Token!
+
+  # volume stats
+  dailyVolumeToken: Float!
+  dailyVolumeETH: Float!
+  dailyVolumeUSD: Float!
+  dailyTxns: Int!
+
+  # liquidity stats
+  totalLiquidityToken: Float!
+  totalLiquidityETH: Float!
+  totalLiquidityUSD: Float!
+
+  # price stats
+  priceUSD: Float!
+}
