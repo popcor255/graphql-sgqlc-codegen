@@ -4,9 +4,13 @@ function fileread(filename)
    return contents
 }        
 var fs =require("fs");  // file system        
-var filename = "./test.py"
+var filename = "./schema/schema.py"
 var file = fileread(filename)
 var data = file.toString()
+var header = "from sgqlc.types.relay import Connection, connection_args \n"
+
+data = header + data
+
 var startToken = `class Query(sgqlc.types.Type):`
 var endToken = `class`
 var startQueryIndex = data.indexOf(startToken)
